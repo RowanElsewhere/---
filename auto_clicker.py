@@ -10,7 +10,8 @@ class AutoClickerGUI:
         self.root = root
         self.root.title("自动点击器")
         self.root.geometry("500x650")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.root.attributes('-topmost', True)
         
         self.recorded_positions = []
         self.is_recording = False
@@ -19,14 +20,17 @@ class AutoClickerGUI:
         self.keyboard_listener = None
         self.max_positions = 6
         
+        # 统一设置全局字体
+        import tkinter.font as tkfont
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(family="微软雅黑", size=10)
+        self.root.option_add("*Font", default_font)
+
         self.create_widgets()
         
     def create_widgets(self):
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        title_label = ttk.Label(main_frame, text="自动点击器", font=("Arial", 16, "bold"))
-        title_label.pack(pady=(0, 20))
         
         control_frame = ttk.LabelFrame(main_frame, text="控制面板", padding="10")
         control_frame.pack(fill=tk.X, pady=(0, 10))
@@ -80,11 +84,12 @@ class AutoClickerGUI:
         self.position_list = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=10)
         self.position_list.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.position_list.yview)
+        self.position_list.bind('<Double-Button-1>', self.edit_position)
         
         clear_btn = ttk.Button(main_frame, text="清空记录", command=self.clear_positions)
         clear_btn.pack(fill=tk.X, pady=(10, 0))
         
-        help_label = ttk.Label(main_frame, text="快捷键: ESC 停止执行", font=("Arial", 9), foreground="gray")
+        help_label = ttk.Label(main_frame, text="快捷键: ESC 停止执行", font=("微软雅黑", 9), foreground="gray")
         help_label.pack(pady=(10, 0))
         
         self.setup_keyboard_listener()
@@ -153,6 +158,46 @@ class AutoClickerGUI:
         self.max_pos_entry.config(state=tk.NORMAL)
         self.status_label.config(text=f"录制完成，共 {len(self.recorded_positions)} 个位置", foreground="blue")
         
+    def edit_position(self, event):
+        selection = self.position_list.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        
+        self.editing_index = index
+        self.status_label.config(text=f"3 秒后请点击新位置（替换位置 {index + 1}）...", foreground="orange")
+        self.position_list.config(state=tk.DISABLED)
+        self.edit_countdown = 3
+        self._do_edit_countdown()
+    
+    def _do_edit_countdown(self):
+        if self.edit_countdown > 0:
+            index = self.editing_index
+            self.status_label.config(
+                text=f"{self.edit_countdown} 秒后请点击新位置（替换位置 {index + 1}）...",
+                foreground="orange"
+            )
+            self.edit_countdown -= 1
+            self.root.after(1000, self._do_edit_countdown)
+        else:
+            self.status_label.config(text="请点击屏幕选择新位置...", foreground="green")
+            
+            def on_click(x, y, button, pressed):
+                if pressed:
+                    index = self.editing_index
+                    self.recorded_positions[index] = (x, y)
+                    self.root.after(0, lambda: self._finish_edit_position(index, x, y))
+                    return False  # 停止监听
+            
+            edit_listener = mouse.Listener(on_click=on_click)
+            edit_listener.start()
+    
+    def _finish_edit_position(self, index, x, y):
+        self.position_list.config(state=tk.NORMAL)
+        self.position_list.delete(index)
+        self.position_list.insert(index, f"位置 {index + 1}: ({x}, {y})")
+        self.status_label.config(text=f"位置 {index + 1} 已更新为 ({x}, {y})", foreground="blue")
+
     def clear_positions(self):
         self.recorded_positions = []
         self.position_list.delete(0, tk.END)
